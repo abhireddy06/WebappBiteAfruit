@@ -49,6 +49,7 @@ SHEETS: dict[str, list[str]] = {
         "price",
         "discount",
         "final_price",
+        "image_url",
         "is_active",
     ],
     "subscriptions": [
@@ -88,7 +89,7 @@ SHEETS: dict[str, list[str]] = {
         "created_at",
     ],
     "invoices": ["id", "payment_id", "invoice_number", "invoice_url", "issued_at"],
-    "inventory": ["id", "item_name", "category", "unit", "quantity", "low_stock_threshold", "updated_at"],
+    "inventory": ["id", "item_name", "category", "unit", "quantity", "low_stock_threshold", "availability_status", "updated_at"],
     "whatsapp_messages": ["id", "customer_id", "template_name", "phone_number", "body", "status", "sent_at", "created_at"],
     "notifications": ["id", "user_id", "channel", "title", "body", "is_read", "created_at"],
     "support_tickets": ["id", "customer_id", "subject", "message", "status", "created_at"],
@@ -118,6 +119,7 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "price": 2500,
         "discount": 500,
         "final_price": 2000,
+        "image_url": "/images/medium-bowl-fruits-veggies-sprouts-egg.png",
         "is_active": True,
     },
     {
@@ -131,6 +133,7 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "price": 3499,
         "discount": 500,
         "final_price": 2999,
+        "image_url": "/images/weight-loss-bowl.png",
         "is_active": True,
     },
     {
@@ -144,6 +147,7 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "price": 4299,
         "discount": 600,
         "final_price": 3699,
+        "image_url": "/images/weight-gain-bowl.png",
         "is_active": True,
     },
 ]
@@ -202,6 +206,7 @@ class ExcelStore:
                 for sheet_name, headers in SHEETS.items():
                     worksheet = workbook.create_sheet(sheet_name)
                     worksheet.append(headers)
+                self._ensure_default_plans(workbook)
                 workbook.save(self.path)
                 self._upload_to_s3()
         else:
@@ -283,6 +288,7 @@ class ExcelStore:
                     "unit": unit,
                     "quantity": quantity,
                     "low_stock_threshold": threshold,
+                    "availability_status": "available" if quantity > 0 else "soldout",
                     "updated_at": now,
                 },
             )
@@ -420,6 +426,23 @@ class ExcelStore:
                     }
         logger.warning("Excel row update target not found", extra={"sheet": sheet_name, "row_id": row_id})
         return None
+
+    def delete(self, sheet_name: str, row_id: int) -> bool:
+        with self.lock, self._file_lock():
+            self._download_from_s3()
+            workbook = load_workbook(self.path)
+            worksheet = workbook[sheet_name]
+            headers = [cell.value for cell in worksheet[1]]
+            id_index = headers.index("id") + 1
+            for row_number in range(2, worksheet.max_row + 1):
+                if worksheet.cell(row=row_number, column=id_index).value == row_id:
+                    worksheet.delete_rows(row_number, 1)
+                    workbook.save(self.path)
+                    self._upload_to_s3()
+                    logger.info("Deleted Excel row", extra={"sheet": sheet_name, "row_id": row_id})
+                    return True
+        logger.warning("Excel row delete target not found", extra={"sheet": sheet_name, "row_id": row_id})
+        return False
 
     def create_weekday_deliveries(self, subscription: dict[str, Any], partner_id: int | None = None) -> None:
         with self.lock, self._file_lock():

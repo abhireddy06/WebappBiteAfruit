@@ -32,9 +32,14 @@ data/*.xlsx
 data/*.xlsx.lock
 backend/data/*.xlsx
 backend/data/*.xlsx.lock
+backend/data/*-seed.xlsx
+backend/data/*-seed.xlsx.lock
 
 # AWS / deployment generated artifacts
 *.generated.json
+dev-*.generated.json
+prod-*.generated.json
+prod-secrets.generated.json
 lambda-build/
 backend-lambda.zip
 .serverless/

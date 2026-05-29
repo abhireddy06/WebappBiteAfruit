@@ -91,9 +91,40 @@ class PlanRead(BaseModel):
     price: float
     discount: float
     final_price: float
+    image_url: str | None = None
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class PlanCreate(BaseModel):
+    name: str
+    goal: str
+    description: str
+    duration_days: int = Field(gt=0)
+    delivery_days: list[str] = []
+    fruits_included: list[str] = []
+    optional_addons: list[str] = []
+    price: float = Field(ge=0)
+    discount: float = Field(ge=0, default=0)
+    final_price: float | None = Field(ge=0, default=None)
+    image_url: str | None = None
+    is_active: bool = True
+
+
+class PlanUpdate(BaseModel):
+    name: str | None = None
+    goal: str | None = None
+    description: str | None = None
+    duration_days: int | None = Field(gt=0, default=None)
+    delivery_days: list[str] | None = None
+    fruits_included: list[str] | None = None
+    optional_addons: list[str] | None = None
+    price: float | None = Field(ge=0, default=None)
+    discount: float | None = Field(ge=0, default=None)
+    final_price: float | None = Field(ge=0, default=None)
+    image_url: str | None = None
+    is_active: bool | None = None
 
 
 class SubscriptionCreate(BaseModel):
@@ -190,3 +221,7 @@ class RazorpayPaymentVerify(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
+
+
+class InventoryAvailabilityUpdate(BaseModel):
+    availability_status: str

@@ -27,11 +27,14 @@ from app.schemas import (
     GoogleLoginRequest,
     HealthLogCreate,
     HealthLogRead,
+    InventoryAvailabilityUpdate,
     LoginRequest,
     PaymentCreate,
     PaymentRead,
     PhoneOtpRequest,
+    PlanCreate,
     PlanRead,
+    PlanUpdate,
     RazorpayOrderCreate,
     RazorpayOrderRead,
     RazorpayPaymentVerify,
@@ -274,6 +277,99 @@ def me(current_user: dict = Depends(get_current_user)) -> dict:
 @app.get("/plans", response_model=list[PlanRead])
 def list_plans() -> list[dict]:
     return active_plans()
+
+
+@app.post("/admin/plans", response_model=PlanRead)
+def admin_create_plan(
+    payload: PlanCreate,
+    current_user: dict = Depends(require_roles(UserRole.admin)),
+) -> dict:
+    existing = store.find_one("subscription_plans", name=payload.name)
+    if existing:
+        raise HTTPException(status_code=409, detail="Product already exists")
+    final_price = payload.final_price
+    if final_price is None:
+        final_price = max(float(payload.price) - float(payload.discount), 0)
+    product = store.insert(
+        "subscription_plans",
+        {
+            "name": payload.name,
+            "goal": payload.goal,
+            "description": payload.description,
+            "duration_days": payload.duration_days,
+            "delivery_days": payload.delivery_days,
+            "fruits_included": payload.fruits_included,
+            "optional_addons": payload.optional_addons,
+            "price": payload.price,
+            "discount": payload.discount,
+            "final_price": final_price,
+            "image_url": payload.image_url,
+            "is_active": payload.is_active,
+        },
+    )
+    logger.info("Admin created product", extra={"product_id": product["id"], "admin_id": current_user["id"]})
+    return product
+
+
+@app.get("/admin/plans", response_model=list[PlanRead])
+def admin_list_plans(current_user: dict = Depends(require_roles(UserRole.admin))) -> list[dict]:
+    logger.info("Admin products requested", extra={"user_id": current_user["id"]})
+    return sorted(store.all("subscription_plans"), key=lambda plan: plan["name"])
+
+
+@app.patch("/admin/plans/{plan_id}", response_model=PlanRead)
+def admin_update_plan(
+    plan_id: int,
+    payload: PlanUpdate,
+    current_user: dict = Depends(require_roles(UserRole.admin)),
+) -> dict:
+    product = store.get("subscription_plans", plan_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    values = payload.model_dump(exclude_unset=True)
+    if "name" in values and values["name"] != product["name"]:
+        existing = store.find_one("subscription_plans", name=values["name"])
+        if existing and existing["id"] != plan_id:
+            raise HTTPException(status_code=409, detail="Product already exists")
+    if values.get("final_price") is None and ("price" in values or "discount" in values):
+        price = float(values.get("price", product["price"]) or 0)
+        discount = float(values.get("discount", product.get("discount") or 0))
+        values["final_price"] = max(price - discount, 0)
+    updated = store.update("subscription_plans", plan_id, values)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Product not found")
+    logger.info("Admin updated product", extra={"product_id": plan_id, "admin_id": current_user["id"]})
+    return updated
+
+
+@app.delete("/admin/plans/{plan_id}")
+def admin_delete_plan(
+    plan_id: int,
+    current_user: dict = Depends(require_roles(UserRole.admin)),
+) -> dict:
+    product = store.get("subscription_plans", plan_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    linked_subscription = next(
+        (subscription for subscription in store.all("subscriptions") if subscription.get("plan_id") == plan_id),
+        None,
+    )
+    if linked_subscription:
+        updated = store.update("subscription_plans", plan_id, {"is_active": False})
+        logger.info(
+            "Admin deactivated product because subscriptions exist",
+            extra={"product_id": plan_id, "admin_id": current_user["id"]},
+        )
+        return {
+            "message": "Product has customer subscriptions, so it was deactivated instead of deleted.",
+            "product": updated,
+            "deleted": False,
+        }
+    deleted = store.delete("subscription_plans", plan_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Product not found")
+    logger.info("Admin deleted product", extra={"product_id": plan_id, "admin_id": current_user["id"]})
+    return {"message": "Product deleted successfully.", "deleted": True}
 
 
 @app.post("/profiles/me", response_model=CustomerProfileRead)
@@ -716,10 +812,21 @@ def admin_dashboard(current_user: dict = Depends(require_roles(UserRole.admin)))
     payments = store.all("payments")
     deliveries = store.all("deliveries")
     inventory = store.all("inventory")
-    paid_revenue = sum(payment["amount"] or 0 for payment in payments if payment.get("status") == PaymentStatus.paid.value)
+    today = date.today()
+    monthly_paid_revenue = 0
+    total_paid_revenue = 0
+    for payment in payments:
+        if payment.get("status") != PaymentStatus.paid.value:
+            continue
+        amount = payment.get("amount") or 0
+        total_paid_revenue += amount
+        payment_date = payment.get("paid_at") or payment.get("created_at")
+        if isinstance(payment_date, datetime):
+            payment_date = payment_date.date()
+        if payment_date and payment_date.year == today.year and payment_date.month == today.month:
+            monthly_paid_revenue += amount
     delivered = len([delivery for delivery in deliveries if delivery.get("status") == DeliveryStatus.delivered.value])
     success_rate = round((delivered / len(deliveries)) * 100, 1) if deliveries else 0
-    today = date.today()
     ending_window = today + timedelta(days=5)
     user_by_id = {user["id"]: user for user in users}
     plan_by_id = {plan["id"]: plan for plan in store.all("subscription_plans")}
@@ -752,7 +859,8 @@ def admin_dashboard(current_user: dict = Depends(require_roles(UserRole.admin)))
         and today <= subscription["end_date"] <= ending_window
     ]
     return {
-        "monthly_recurring_revenue": paid_revenue,
+        "monthly_recurring_revenue": monthly_paid_revenue,
+        "total_paid_revenue": total_paid_revenue,
         "total_customers": len([user for user in users if user.get("role") == UserRole.customer.value]),
         "active_subscriptions": len([sub for sub in subscriptions if sub.get("status") == SubscriptionStatus.active.value]),
         "active_customers_by_product": sorted(
@@ -778,10 +886,42 @@ def inventory(current_user: dict = Depends(require_roles(UserRole.admin))) -> li
     return [
         {
             **item,
+            "availability_status": item.get("availability_status") or ("soldout" if (item.get("quantity") or 0) <= 0 else "available"),
             "low_stock": item["quantity"] <= item["low_stock_threshold"],
         }
         for item in sorted(store.all("inventory"), key=lambda row: row["item_name"])
     ]
+
+
+@app.patch("/admin/inventory/{inventory_id}/availability")
+def update_inventory_availability(
+    inventory_id: int,
+    payload: InventoryAvailabilityUpdate,
+    current_user: dict = Depends(require_roles(UserRole.admin)),
+) -> dict:
+    status_value = payload.availability_status.strip().lower()
+    if status_value not in {"available", "soldout"}:
+        raise HTTPException(status_code=400, detail="availability_status must be available or soldout")
+    item = store.get("inventory", inventory_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    updated = store.update(
+        "inventory",
+        inventory_id,
+        {
+            "availability_status": status_value,
+            "updated_at": datetime.utcnow(),
+        },
+    )
+    logger.info(
+        "Inventory availability updated",
+        extra={"inventory_id": inventory_id, "availability_status": status_value, "admin_id": current_user["id"]},
+    )
+    return {
+        **updated,
+        "availability_status": updated.get("availability_status") or status_value,
+        "low_stock": updated["quantity"] <= updated["low_stock_threshold"],
+    }
 
 
 @app.post("/admin/users", response_model=UserRead)

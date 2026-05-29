@@ -101,6 +101,19 @@ const products = [
   }
 ];
 
+const productFallbacks = products.reduce((lookup, product) => {
+  lookup[product.name] = product;
+  return lookup;
+}, {});
+
+function planImage(plan) {
+  return plan.image_url || productFallbacks[plan.name]?.image || "/images/medium-bowl-fruits-veggies-sprouts-egg.png";
+}
+
+function deliveryDaysText(deliveryDays) {
+  return Array.isArray(deliveryDays) && deliveryDays.length ? deliveryDays.join(", ") : "Delivery days managed by admin";
+}
+
 const progressData = [
   { week: "Start", weight: 72 },
   { week: "W1", weight: 70.8 },
@@ -159,7 +172,7 @@ function Badge({ children, tone = "green" }) {
   return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
 }
 
-function Button({ children, variant = "primary", className = "", ...props }) {
+function Button({ children, variant = "primary", className = "", type = "button", ...props }) {
   const styles = {
     primary: "bg-brand-green text-white hover:bg-green-600",
     secondary: "bg-brand-orange text-white hover:bg-orange-600",
@@ -167,7 +180,7 @@ function Button({ children, variant = "primary", className = "", ...props }) {
     outline: "border border-slate-200 bg-transparent text-brand-ink hover:border-brand-green dark:border-white/15 dark:text-white"
   };
   return (
-    <button className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${styles[variant]} ${className}`} {...props}>
+    <button type={type} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${styles[variant]} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -309,6 +322,22 @@ function Benefits() {
 }
 
 function ProductCards({ setView, setSelectedPlanName }) {
+  const [displayProducts, setDisplayProducts] = useState(plans);
+
+  useEffect(() => {
+    let cancelled = false;
+    api("/plans")
+      .then((data) => {
+        if (!cancelled) setDisplayProducts(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayProducts(plans);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function orderProduct(productName) {
     setSelectedPlanName(productName);
     setView("register");
@@ -324,25 +353,25 @@ function ProductCards({ setView, setSelectedPlanName }) {
         <p className="max-w-xl text-slate-600 dark:text-slate-300">Choose from balanced, weight-loss, and weight-gain bowls made with fresh fruits and practical add-ons.</p>
       </div>
       <div className="grid gap-6 md:grid-cols-3">
-        {products.map((product) => (
-          <div key={product.name} className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-950">
+        {displayProducts.map((product) => (
+          <div key={product.id || product.name} className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-950">
             <div className="aspect-[4/3] overflow-hidden">
-              <img src={product.image} alt={`${product.name} fruit bowl`} className="h-full w-full object-cover" />
+              <img src={planImage(product)} alt={`${product.name} fruit bowl`} className="h-full w-full object-cover" />
             </div>
             <div className="flex flex-1 flex-col p-5">
               <div className="flex items-start justify-between gap-3">
                 <h3 className="text-xl font-extrabold text-brand-ink dark:text-white">{product.name}</h3>
                 <div className="text-right">
-                  <p className="text-xs font-semibold text-slate-500 line-through">{formatCurrency(product.originalPrice)}</p>
-                  <p className="text-2xl font-extrabold text-brand-green">{formatCurrency(product.price)}</p>
+                  <p className="text-xs font-semibold text-slate-500 line-through">{formatCurrency(product.price)}</p>
+                  <p className="text-2xl font-extrabold text-brand-green">{formatCurrency(product.final_price)}</p>
                 </div>
               </div>
               <div className="mt-4 flex min-h-24 flex-wrap content-start gap-2">
-                {product.fruits.map((fruit) => <Badge key={fruit} tone="slate">{fruit}</Badge>)}
+                {(product.fruits_included || productFallbacks[product.name]?.fruits || []).map((fruit) => <Badge key={fruit} tone="slate">{fruit}</Badge>)}
               </div>
               <div className="mt-auto pt-4">
                 <p className="rounded-lg bg-green-50 px-3 py-2 text-sm font-bold text-green-800 dark:bg-green-500/10 dark:text-green-200">
-                  Delivery: {product.deliveryDays}
+                  Delivery: {deliveryDaysText(product.delivery_days)}
                 </p>
               </div>
               <div className="pt-5">
@@ -357,6 +386,22 @@ function ProductCards({ setView, setSelectedPlanName }) {
 }
 
 function Plans({ setView, setSelectedPlanName }) {
+  const [displayPlans, setDisplayPlans] = useState(plans);
+
+  useEffect(() => {
+    let cancelled = false;
+    api("/plans")
+      .then((data) => {
+        if (!cancelled) setDisplayPlans(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayPlans(plans);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function subscribe(planName) {
     setSelectedPlanName(planName);
     setView("register");
@@ -372,8 +417,12 @@ function Plans({ setView, setSelectedPlanName }) {
         <p className="max-w-xl text-slate-600 dark:text-slate-300">Every plan includes delivery days, fruit composition, optional add-ons, invoice tracking, and renewal reminders.</p>
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
-        {plans.map((plan) => (
-          <div key={plan.name} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-950">
+        {displayPlans.map((plan) => (
+          <div key={plan.id || plan.name} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-950">
+            <div className="aspect-[16/9] overflow-hidden">
+              <img src={planImage(plan)} alt={`${plan.name} product`} className="h-full w-full object-cover" />
+            </div>
+            <div className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <Badge tone={plan.goal === "Weight Loss" ? "green" : "orange"}>{plan.goal}</Badge>
@@ -394,7 +443,9 @@ function Plans({ setView, setSelectedPlanName }) {
                 {plan.optional_addons.map((addon) => <span key={addon} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><Check size={16} className="text-brand-green" />{addon}</span>)}
               </div>
             </div>
+            <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm font-bold text-green-800 dark:bg-green-500/10 dark:text-green-200">Delivery: {deliveryDaysText(plan.delivery_days)}</p>
             <Button className="mt-6 w-full" onClick={() => subscribe(plan.name)}><WalletCards size={18} />Subscribe</Button>
+            </div>
           </div>
         ))}
       </div>
@@ -810,11 +861,15 @@ function Metric({ icon: Icon, label, value, tone = "green", onClick }) {
   );
 }
 
-function AdminDashboard() {
+function AdminDashboard({ initialPanel = "" }) {
   const [dashboard, setDashboard] = useState(null);
   const [subscriptions, setSubscriptions] = useState([]);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const [inventory, setInventory] = useState([]);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showProducts, setShowProducts] = useState(false);
   const [adminPlans, setAdminPlans] = useState(plans);
+  const [productEdits, setProductEdits] = useState({});
   const defaultAdminPlanId = String(plans.find((plan) => plan.name === "Medium Bowl")?.id || plans[0]?.id || "");
   const [memberForm, setMemberForm] = useState({
     full_name: "",
@@ -842,12 +897,27 @@ function AdminDashboard() {
     selected_addons: "",
     start_date: new Date().toISOString().slice(0, 10)
   });
+  const [productForm, setProductForm] = useState({
+    name: "",
+    goal: "",
+    description: "",
+    duration_days: "30",
+    delivery_days: "Monday, Tuesday, Wednesday, Thursday, Friday",
+    fruits_included: "",
+    optional_addons: "",
+    price: "",
+    discount: "0",
+    final_price: "",
+    image_data: "",
+    is_active: true
+  });
   const [adminStatus, setAdminStatus] = useState("");
+  const selectedProductId = Number(new URLSearchParams(window.location.search).get("productId") || 0);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([api("/admin/dashboard"), api("/plans")])
+    Promise.all([api("/admin/dashboard"), api("/admin/plans")])
       .then(([dashboardData, plansData]) => {
         if (!cancelled) {
           setDashboard(dashboardData);
@@ -868,6 +938,12 @@ function AdminDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (initialPanel === "products" || initialPanel === "product-detail") {
+      loadProducts();
+    }
+  }, [initialPanel]);
+
   async function loadSubscriptions() {
     setShowSubscriptions(true);
     setAdminStatus("Loading subscriptions...");
@@ -875,6 +951,61 @@ function AdminDashboard() {
       const data = await api("/admin/subscriptions");
       setSubscriptions(data);
       setAdminStatus("");
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  async function loadInventory() {
+    setShowInventory(true);
+    setAdminStatus("Loading stock...");
+    try {
+      const data = await api("/admin/inventory");
+      setInventory(data);
+      setAdminStatus("");
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  async function loadProducts() {
+    setShowProducts(true);
+    setAdminStatus("Loading products...");
+    try {
+      const data = await api("/admin/plans");
+      setAdminPlans(data);
+      setProductEdits(data.reduce((edits, plan) => ({ ...edits, [plan.id]: productToForm(plan) }), {}));
+      setAdminStatus("");
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  function openProductManagement() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "admin-products");
+    url.searchParams.delete("productId");
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  }
+
+  function openProductDetails(planId) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "admin-product-detail");
+    url.searchParams.set("productId", String(planId));
+    window.location.href = url.toString();
+  }
+
+  async function updateInventoryAvailability(inventoryId, availabilityStatus) {
+    setAdminStatus("Updating stock...");
+    try {
+      const updated = await api(`/admin/inventory/${inventoryId}/availability`, {
+        method: "PATCH",
+        body: JSON.stringify({ availability_status: availabilityStatus })
+      });
+      setInventory((current) => current.map((item) => item.id === inventoryId ? updated : item));
+      const refreshed = await api("/admin/dashboard");
+      setDashboard(refreshed);
+      setAdminStatus(`${updated.item_name} marked ${availabilityStatus === "soldout" ? "sold out" : "available"}.`);
     } catch (error) {
       setAdminStatus(error.message);
     }
@@ -931,6 +1062,76 @@ function AdminDashboard() {
     return value.split(",").map((item) => item.trim()).filter(Boolean);
   }
 
+  function productToForm(product) {
+    return {
+      name: product.name || "",
+      goal: product.goal || "",
+      description: product.description || "",
+      duration_days: String(product.duration_days || 30),
+      delivery_days: (product.delivery_days || []).join(", "),
+      fruits_included: (product.fruits_included || []).join(", "),
+      optional_addons: (product.optional_addons || []).join(", "),
+      price: String(product.price ?? ""),
+      discount: String(product.discount ?? 0),
+      final_price: String(product.final_price ?? ""),
+      image_data: product.image_url || "",
+      is_active: Boolean(product.is_active)
+    };
+  }
+
+  function readImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Unable to read product image"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function updateProductImage(file) {
+    if (!file) {
+      setProductForm((current) => ({ ...current, image_data: "" }));
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setAdminStatus("Please upload an image file.");
+      return;
+    }
+    if (file.size > 750 * 1024) {
+      setAdminStatus("Product image must be 750 KB or smaller.");
+      return;
+    }
+    try {
+      const imageData = await readImageFile(file);
+      setProductForm((current) => ({ ...current, image_data: imageData }));
+      setAdminStatus("");
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  async function updateExistingProductImage(planId, file) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAdminStatus("Please upload an image file.");
+      return;
+    }
+    if (file.size > 750 * 1024) {
+      setAdminStatus("Product image must be 750 KB or smaller.");
+      return;
+    }
+    try {
+      const imageData = await readImageFile(file);
+      setProductEdits((current) => ({
+        ...current,
+        [planId]: { ...current[planId], image_data: imageData }
+      }));
+      setAdminStatus("");
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
   async function createCustomer(event) {
     event.preventDefault();
     setAdminStatus("Adding customer...");
@@ -984,6 +1185,117 @@ function AdminDashboard() {
     }
   }
 
+  async function createProduct(event) {
+    event.preventDefault();
+    setAdminStatus("Adding product...");
+    try {
+      const created = await api("/admin/plans", {
+        method: "POST",
+        body: JSON.stringify({
+          name: productForm.name,
+          goal: productForm.goal,
+          description: productForm.description,
+          duration_days: Number(productForm.duration_days),
+          delivery_days: csvToList(productForm.delivery_days),
+          fruits_included: csvToList(productForm.fruits_included),
+          optional_addons: csvToList(productForm.optional_addons),
+          price: Number(productForm.price),
+          discount: productForm.discount ? Number(productForm.discount) : 0,
+          final_price: productForm.final_price ? Number(productForm.final_price) : null,
+          image_url: productForm.image_data || null,
+          is_active: productForm.is_active
+        })
+      });
+      const plansData = await api("/admin/plans");
+      setAdminPlans(plansData);
+      setProductEdits(plansData.reduce((edits, plan) => ({ ...edits, [plan.id]: productToForm(plan) }), {}));
+      setProductForm({
+        name: "",
+        goal: "",
+        description: "",
+        duration_days: "30",
+        delivery_days: "Monday, Tuesday, Wednesday, Thursday, Friday",
+        fruits_included: "",
+        optional_addons: "",
+        price: "",
+        discount: "0",
+        final_price: "",
+        image_data: "",
+        is_active: true
+      });
+      const message = `${created.name} added successfully.`;
+      setAdminStatus(message);
+      window.alert(message);
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  async function updateProduct(planId) {
+    const form = productEdits[planId];
+    if (!form) {
+      setAdminStatus("Product details are still loading. Please try again.");
+      return;
+    }
+    if (!form.name || !form.goal || !form.description || !form.duration_days || !form.price) {
+      setAdminStatus("Please fill product name, type, description, duration, and price before saving.");
+      return;
+    }
+    setAdminStatus("Updating product...");
+    try {
+      const updated = await api(`/admin/plans/${planId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: form.name,
+          goal: form.goal,
+          description: form.description,
+          duration_days: Number(form.duration_days),
+          delivery_days: csvToList(form.delivery_days),
+          fruits_included: csvToList(form.fruits_included),
+          optional_addons: csvToList(form.optional_addons),
+          price: Number(form.price),
+          discount: form.discount ? Number(form.discount) : 0,
+          final_price: form.final_price ? Number(form.final_price) : null,
+          image_url: form.image_data || null,
+          is_active: form.is_active
+        })
+      });
+      const plansData = await api("/admin/plans");
+      setAdminPlans(plansData);
+      setProductEdits(plansData.reduce((edits, plan) => ({ ...edits, [plan.id]: productToForm(plan) }), {}));
+      const message = `${updated.name} updated successfully.`;
+      setAdminStatus(message);
+      window.alert(message);
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
+  async function deleteProduct(planId) {
+    const product = adminPlans.find((item) => item.id === planId);
+    const productName = product?.name || "Product";
+    if (!window.confirm(`Delete ${productName}? If customers use it, it will be deactivated instead.`)) {
+      return;
+    }
+    setAdminStatus("Deleting product...");
+    try {
+      const result = await api(`/admin/plans/${planId}`, { method: "DELETE" });
+      const plansData = await api("/admin/plans");
+      setAdminPlans(plansData);
+      setProductEdits(plansData.reduce((edits, plan) => ({ ...edits, [plan.id]: productToForm(plan) }), {}));
+      setAdminStatus(result.message);
+      window.alert(result.message);
+      if (result.deleted) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("view", "admin-products");
+        url.searchParams.delete("productId");
+        window.location.href = url.toString();
+      }
+    } catch (error) {
+      setAdminStatus(error.message);
+    }
+  }
+
   const successRate = dashboard?.delivery_success_rate ?? 0;
   const lowStockItems = dashboard?.low_stock_alerts?.length
     ? dashboard.low_stock_alerts.map((item) => `${item.item_name}: ${item.quantity} ${item.unit}`)
@@ -992,11 +1304,21 @@ function AdminDashboard() {
     ? dashboard.subscriptions_ending_soon.map((item) => `${item.customer_name} - ${item.plan_name} ends ${item.end_date} (${item.days_remaining} days left)`)
     : ["No subscriptions ending in the next 5 days"];
   const activeProductCounts = dashboard?.active_customers_by_product || [];
+  const isProductPage = initialPanel === "products";
+  const isProductDetailPage = initialPanel === "product-detail";
+  const selectedProduct = adminPlans.find((product) => product.id === selectedProductId);
+  const selectedProductEdit = selectedProduct ? (productEdits[selectedProduct.id] || productToForm(selectedProduct)) : null;
 
   return (
-    <DashboardShell title="Admin Dashboard" subtitle="Revenue, subscriptions, delivery, inventory, and customer growth.">
-      <div className="grid gap-4 md:grid-cols-4">
-        <Metric icon={WalletCards} label="Monthly Recurring Revenue" value={formatCurrency(dashboard?.monthly_recurring_revenue)} />
+    <DashboardShell
+      title={isProductPage || isProductDetailPage ? "Product Management" : "Admin Dashboard"}
+      subtitle={isProductPage || isProductDetailPage ? "View products, then update or delete selected product details." : "Revenue, subscriptions, delivery, inventory, and customer growth."}
+    >
+      {!isProductPage && !isProductDetailPage && (
+        <>
+      <div className="grid gap-4 md:grid-cols-5">
+        <Metric icon={WalletCards} label="Total Revenue" value={formatCurrency(dashboard?.total_paid_revenue)} />
+        <Metric icon={WalletCards} label="Current Month Revenue" value={formatCurrency(dashboard?.monthly_recurring_revenue)} />
         <Metric icon={User} label="Total Customers" value={dashboard?.total_customers ?? 0} tone="orange" />
         <Metric icon={Package} label="Active Subscriptions" value={dashboard?.active_subscriptions ?? 0} onClick={loadSubscriptions} />
         <Metric icon={Bike} label="Delivery Success Rate" value={`${successRate}%`} tone="orange" />
@@ -1021,6 +1343,10 @@ function AdminDashboard() {
         )}
       </div>
       {adminStatus && <p className="rounded-lg bg-orange-50 p-4 text-sm text-orange-800 dark:bg-orange-500/10 dark:text-orange-200">{adminStatus}</p>}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" onClick={loadInventory}><Package size={18} />Manage Stock</Button>
+        <Button variant="outline" onClick={openProductManagement}><Package size={18} />Manage Products</Button>
+      </div>
       <form onSubmit={createMember} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">Add Member</h2>
@@ -1077,6 +1403,234 @@ function AdminDashboard() {
         </div>
         <Button type="submit"><User size={18} />Add Customer</Button>
       </form>
+      <form onSubmit={createProduct} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">Add Product</h2>
+          <Badge tone="orange">Dynamic Product</Badge>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <input className="input" required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} placeholder="Product name" />
+          <input className="input" required value={productForm.goal} onChange={(event) => setProductForm({ ...productForm, goal: event.target.value })} placeholder="Product type / goal" />
+          <input className="input" required type="number" min="1" value={productForm.duration_days} onChange={(event) => setProductForm({ ...productForm, duration_days: event.target.value })} placeholder="Duration days" />
+          <input className="input" required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} placeholder="Original price" />
+          <input className="input" type="number" min="0" step="0.01" value={productForm.discount} onChange={(event) => setProductForm({ ...productForm, discount: event.target.value })} placeholder="Discount" />
+          <input className="input" type="number" min="0" step="0.01" value={productForm.final_price} onChange={(event) => setProductForm({ ...productForm, final_price: event.target.value })} placeholder="Final price" />
+          <input className="input" value={productForm.delivery_days} onChange={(event) => setProductForm({ ...productForm, delivery_days: event.target.value })} placeholder="Delivery days, comma separated" />
+          <input className="input" required type="file" accept="image/*" onChange={(event) => updateProductImage(event.target.files?.[0])} />
+        </div>
+        {productForm.image_data && (
+          <div className="max-w-sm overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+            <img src={productForm.image_data} alt="Product preview" className="h-40 w-full object-cover" />
+          </div>
+        )}
+        <textarea className="input min-h-24" required value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} placeholder="Product description" />
+        <div className="grid gap-3 md:grid-cols-2">
+          <input className="input" required value={productForm.fruits_included} onChange={(event) => setProductForm({ ...productForm, fruits_included: event.target.value })} placeholder="Ingredients, comma separated" />
+          <input className="input" value={productForm.optional_addons} onChange={(event) => setProductForm({ ...productForm, optional_addons: event.target.value })} placeholder="Optional add-ons, comma separated" />
+        </div>
+        <label className="flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} />
+          Active product
+        </label>
+        <Button type="submit"><Package size={18} />Add Product</Button>
+      </form>
+        </>
+      )}
+      {isProductPage && (
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">All Products</h2>
+            <Button variant="outline" onClick={loadProducts}>Refresh</Button>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Product Name</th>
+                  <th className="px-4 py-3">Active Status</th>
+                  <th className="px-4 py-3">Price</th>
+                  <th className="px-4 py-3">Delivery</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
+                {adminPlans.map((product) => (
+                  <tr key={product.id}>
+                    <td className="px-4 py-3 font-bold text-brand-ink dark:text-white">{product.name}</td>
+                    <td className="px-4 py-3"><Badge tone={product.is_active ? "green" : "orange"}>{product.is_active ? "Active" : "Inactive"}</Badge></td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatCurrency(product.final_price)}</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{deliveryDaysText(product.delivery_days)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => openProductDetails(product.id)}>Update</Button>
+                        <Button variant="outline" onClick={() => openProductDetails(product.id)}>Delete</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!adminPlans.length && <p className="rounded-lg bg-white p-4 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">No products found.</p>}
+        </div>
+      )}
+      {isProductDetailPage && selectedProduct && selectedProductEdit && (
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">{selectedProduct.name}</h2>
+            <Button variant="outline" onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.set("view", "admin-products");
+              url.searchParams.delete("productId");
+              window.location.href = url.toString();
+            }}>Back to Products</Button>
+          </div>
+          {(() => {
+            const edit = selectedProductEdit;
+            const updateEdit = (changes) => setProductEdits((current) => ({
+              ...current,
+              [selectedProduct.id]: { ...edit, ...changes }
+            }));
+            return (
+              <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <Badge tone={edit.is_active ? "green" : "orange"}>{edit.is_active ? "Active" : "Inactive"}</Badge>
+                    <h3 className="mt-3 text-lg font-extrabold text-brand-ink dark:text-white">Selected Product Info</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{formatCurrency(selectedProduct.final_price)} | {deliveryDaysText(selectedProduct.delivery_days)}</p>
+                  </div>
+                  <div className="h-28 w-36 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5">
+                    <img src={edit.image_data || planImage(selectedProduct)} alt={`${selectedProduct.name} preview`} className="h-full w-full object-cover" />
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                  <input className="input" required value={edit.name} onChange={(event) => updateEdit({ name: event.target.value })} placeholder="Product name" />
+                  <input className="input" required value={edit.goal} onChange={(event) => updateEdit({ goal: event.target.value })} placeholder="Product type / goal" />
+                  <input className="input" required type="number" min="1" value={edit.duration_days} onChange={(event) => updateEdit({ duration_days: event.target.value })} placeholder="Duration days" />
+                  <input className="input" required type="number" min="0" step="0.01" value={edit.price} onChange={(event) => updateEdit({ price: event.target.value })} placeholder="Original price" />
+                  <input className="input" type="number" min="0" step="0.01" value={edit.discount} onChange={(event) => updateEdit({ discount: event.target.value })} placeholder="Discount" />
+                  <input className="input" type="number" min="0" step="0.01" value={edit.final_price} onChange={(event) => updateEdit({ final_price: event.target.value })} placeholder="Final price" />
+                  <input className="input" value={edit.delivery_days} onChange={(event) => updateEdit({ delivery_days: event.target.value })} placeholder="Delivery days, comma separated" />
+                  <input className="input" type="file" accept="image/*" onChange={(event) => updateExistingProductImage(selectedProduct.id, event.target.files?.[0])} />
+                </div>
+                <textarea className="input min-h-24" required value={edit.description} onChange={(event) => updateEdit({ description: event.target.value })} placeholder="Product description" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input className="input" required value={edit.fruits_included} onChange={(event) => updateEdit({ fruits_included: event.target.value })} placeholder="Ingredients, comma separated" />
+                  <input className="input" value={edit.optional_addons} onChange={(event) => updateEdit({ optional_addons: event.target.value })} placeholder="Optional add-ons, comma separated" />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" checked={edit.is_active} onChange={(event) => updateEdit({ is_active: event.target.checked })} />
+                    Active product
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => updateProduct(selectedProduct.id)}><Package size={18} />Save Product</Button>
+                    <Button variant="outline" onClick={() => deleteProduct(selectedProduct.id)}>Delete Product</Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+      {isProductDetailPage && !selectedProduct && (
+        <p className="rounded-lg bg-orange-50 p-4 text-sm text-orange-800 dark:bg-orange-500/10 dark:text-orange-200">Product not found. Go back to product list and choose a product.</p>
+      )}
+      {false && (
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">Product Details</h2>
+            <Button variant="outline" onClick={loadProducts}>Refresh</Button>
+          </div>
+          {adminPlans.map((product) => {
+            const edit = productEdits[product.id] || productToForm(product);
+            const updateEdit = (changes) => setProductEdits((current) => ({
+              ...current,
+              [product.id]: { ...edit, ...changes }
+            }));
+            return (
+              <div key={product.id} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <Badge tone={edit.is_active ? "green" : "orange"}>{edit.is_active ? "Active" : "Inactive"}</Badge>
+                    <h3 className="mt-3 text-lg font-extrabold text-brand-ink dark:text-white">{product.name}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{formatCurrency(product.final_price)} · {deliveryDaysText(product.delivery_days)}</p>
+                  </div>
+                  <div className="h-28 w-36 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5">
+                    <img src={edit.image_data || planImage(product)} alt={`${product.name} preview`} className="h-full w-full object-cover" />
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                  <input className="input" required value={edit.name} onChange={(event) => updateEdit({ name: event.target.value })} placeholder="Product name" />
+                  <input className="input" required value={edit.goal} onChange={(event) => updateEdit({ goal: event.target.value })} placeholder="Product type / goal" />
+                  <input className="input" required type="number" min="1" value={edit.duration_days} onChange={(event) => updateEdit({ duration_days: event.target.value })} placeholder="Duration days" />
+                  <input className="input" required type="number" min="0" step="0.01" value={edit.price} onChange={(event) => updateEdit({ price: event.target.value })} placeholder="Original price" />
+                  <input className="input" type="number" min="0" step="0.01" value={edit.discount} onChange={(event) => updateEdit({ discount: event.target.value })} placeholder="Discount" />
+                  <input className="input" type="number" min="0" step="0.01" value={edit.final_price} onChange={(event) => updateEdit({ final_price: event.target.value })} placeholder="Final price" />
+                  <input className="input" value={edit.delivery_days} onChange={(event) => updateEdit({ delivery_days: event.target.value })} placeholder="Delivery days, comma separated" />
+                  <input className="input" type="file" accept="image/*" onChange={(event) => updateExistingProductImage(product.id, event.target.files?.[0])} />
+                </div>
+                <textarea className="input min-h-24" required value={edit.description} onChange={(event) => updateEdit({ description: event.target.value })} placeholder="Product description" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input className="input" required value={edit.fruits_included} onChange={(event) => updateEdit({ fruits_included: event.target.value })} placeholder="Ingredients, comma separated" />
+                  <input className="input" value={edit.optional_addons} onChange={(event) => updateEdit({ optional_addons: event.target.value })} placeholder="Optional add-ons, comma separated" />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" checked={edit.is_active} onChange={(event) => updateEdit({ is_active: event.target.checked })} />
+                    Active product
+                  </label>
+                  <Button onClick={() => updateProduct(product.id)}><Package size={18} />Save Product</Button>
+                </div>
+              </div>
+            );
+          })}
+          {!adminPlans.length && <p className="rounded-lg bg-white p-4 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">No products found.</p>}
+        </div>
+      )}
+      {!isProductPage && !isProductDetailPage && (
+        <>
+      {showInventory && (
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-extrabold text-brand-ink dark:text-white">Stock Availability</h2>
+            <Button variant="outline" onClick={loadInventory}>Refresh</Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {inventory.map((item) => {
+              const isSoldOut = item.availability_status === "soldout";
+              return (
+                <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Badge tone={isSoldOut ? "orange" : "green"}>{isSoldOut ? "Sold Out" : "Available"}</Badge>
+                      <h3 className="mt-3 text-lg font-extrabold text-brand-ink dark:text-white">{item.item_name}</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{item.category} · {item.quantity} {item.unit}</p>
+                      {item.low_stock && <p className="mt-2 text-sm font-semibold text-orange-700 dark:text-orange-200">Low stock threshold: {item.low_stock_threshold} {item.unit}</p>}
+                    </div>
+                    <Package className={isSoldOut ? "text-orange-500" : "text-brand-green"} />
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      variant={isSoldOut ? "primary" : "outline"}
+                      onClick={() => updateInventoryAvailability(item.id, "available")}
+                    >
+                      Available
+                    </Button>
+                    <Button
+                      variant={isSoldOut ? "outline" : "primary"}
+                      onClick={() => updateInventoryAvailability(item.id, "soldout")}
+                    >
+                      Sold Out
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {!inventory.length && <p className="rounded-lg bg-white p-4 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">No inventory found.</p>}
+        </div>
+      )}
       {showSubscriptions && (
         <div className="grid gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1127,6 +1681,8 @@ function AdminDashboard() {
         <ListPanel title="Low Stock Alerts" items={lowStockItems} />
       </div>
       <ListPanel title="Subscriptions Ending Soon" items={endingSoonItems} />
+        </>
+      )}
     </DashboardShell>
   );
 }
@@ -1599,7 +2155,10 @@ function PaymentPage({ user, setView, selectedPlanName, setSelectedPlanName }) {
 }
 
 function App() {
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => {
+    const requestedView = new URLSearchParams(window.location.search).get("view");
+    return requestedView || "home";
+  });
   const [dark, setDark] = useState(false);
   const [user, setUser] = useState(storedUser);
   const [selectedPlanName, setSelectedPlanName] = useState("Medium Bowl");
@@ -1617,6 +2176,8 @@ function App() {
     register: <Register setUser={setUser} setView={setView} selectedPlanName={selectedPlanName} setSelectedPlanName={setSelectedPlanName} />,
     payment: <PaymentPage user={user} setView={setView} selectedPlanName={selectedPlanName} setSelectedPlanName={setSelectedPlanName} />,
     "admin-dashboard": <AdminDashboard />,
+    "admin-products": <AdminDashboard initialPanel="products" />,
+    "admin-product-detail": <AdminDashboard initialPanel="product-detail" />,
     "customer-dashboard": <CustomerDashboard user={user} setView={setView} />,
     "delivery_partner-dashboard": <DeliveryDashboard />
   }), [user, selectedPlanName]);
