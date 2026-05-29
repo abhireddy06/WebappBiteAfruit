@@ -1,0 +1,15 @@
+{
+  "name": "biteafruit-backend-serverless",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove": "serverless remove"
+  },
+  "devDependencies": {
+    "serverless": "^4.0.0",
+    "serverless-python-requirements": "^6.1.2"
+  }
+}

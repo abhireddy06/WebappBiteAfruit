@@ -1,0 +1,105 @@
+service: biteafruit-backend
+frameworkVersion: "4"
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  generatedWorkbookBucket: biteafruit-workbook-${aws:accountId}-${sls:stage}
+  pythonRequirements:
+    dockerizePip: non-linux
+    slim: true
+    strip: false
+    noDeploy:
+      - boto3
+      - botocore
+  workbookBucket: ${env:EXCEL_S3_BUCKET, self:custom.generatedWorkbookBucket}
+  workbookKey: ${env:EXCEL_S3_KEY, 'biteafruit/biteafruit.xlsx'}
+  unsafeExcelS3: ${env:ALLOW_UNSAFE_EXCEL_S3, 'false'}
+
+provider:
+  name: aws
+  runtime: python3.11
+  architecture: x86_64
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, env:AWS_REGION, 'ap-south-1'}
+  memorySize: 1024
+  timeout: 30
+  logRetentionInDays: 14
+  httpApi:
+    cors:
+      allowedOrigins:
+        - ${env:FRONTEND_ORIGIN, 'http://localhost:5173'}
+      allowedMethods:
+        - GET
+        - POST
+        - PATCH
+        - OPTIONS
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      allowCredentials: true
+  environment:
+    APP_NAME: "Bite a Fruit"
+    ENVIRONMENT: ${sls:stage}
+    JWT_SECRET: ${env:JWT_SECRET, 'change-this-in-production'}
+    FRONTEND_ORIGIN: ${env:FRONTEND_ORIGIN, 'http://localhost:5173'}
+    EXCEL_STORAGE: s3
+    EXCEL_DATABASE_PATH: /tmp/biteafruit.xlsx
+    EXCEL_S3_BUCKET: ${self:custom.workbookBucket}
+    EXCEL_S3_KEY: ${self:custom.workbookKey}
+    AWS_REGION: ${self:provider.region}
+    ALLOW_UNSAFE_EXCEL_S3: ${self:custom.unsafeExcelS3}
+    RAZORPAY_KEY_ID: ${env:RAZORPAY_KEY_ID, ''}
+    RAZORPAY_KEY_SECRET: ${env:RAZORPAY_KEY_SECRET, ''}
+    CLOUDINARY_URL: ${env:CLOUDINARY_URL, ''}
+    GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID, ''}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+          Resource:
+            - arn:aws:s3:::${self:custom.workbookBucket}/${self:custom.workbookKey}
+
+functions:
+  api:
+    handler: app.main.handler
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+
+resources:
+  Resources:
+    WorkbookBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        BucketName: ${self:custom.workbookBucket}
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+
+package:
+  patterns:
+    - app/**
+    - requirements.txt
+    - "!data/**"
+    - "!__pycache__/**"
+    - "!**/__pycache__/**"
+    - "!*.zip"
+    - "!.env"
+    - "!.venv/**"

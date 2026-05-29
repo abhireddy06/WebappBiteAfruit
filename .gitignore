@@ -1,0 +1,52 @@
+# Secrets and local notes
+creds.txt
+hist.md
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Backend local data
+data/*.xlsx
+data/*.xlsx.lock
+backend/data/*.xlsx
+backend/data/*.xlsx.lock
+
+# AWS / deployment generated artifacts
+*.generated.json
+lambda-build/
+backend-lambda.zip
+.serverless/
+backend/.serverless/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
